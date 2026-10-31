@@ -152,6 +152,44 @@ function Test-TrayRunning {
     }
 }
 
+function Wait-TrayUp {
+    # Start-ScheduledTask 在「任务被拒绝执行」时不会抛异常——拒绝只体现在任务的
+    # LastTaskResult 里（例如 0x800710E0 操作员或系统管理员拒绝了请求），所以启动
+    # 之后必须实测托盘是否真的起来了。否则会把失败当成成功，用户双击 exe 毫无反应。
+    param([int]$Seconds = 8)
+    $deadline = (Get-Date).AddSeconds($Seconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-TrayRunning) { return $true }
+        Start-Sleep -Milliseconds 400
+    }
+    # 互斥量没出现时，再用进程枚举兜底确认一次
+    return (@(Get-TrayProcesses).Count -gt 0)
+}
+
+function Start-TrayDetached {
+    # 通过 WMI 创建进程，使新进程的父进程变成 WmiPrvSE，从而脱离启动器的进程树
+    # 与 Job Object。用 Start-Process 拉起的话，启动器一退出，托盘会被 Job Object
+    # 的 kill-on-close 连带终止（表现为托盘刚起来几秒就消失、且日志里没有 tray stopped）。
+    # 注意：ps2exe 宿主里 CimCmdlets 可能不可用，所以这里走 System.Management 老接口。
+    param([string]$CommandLine)
+    try {
+        Add-Type -AssemblyName System.Management -ErrorAction SilentlyContinue
+        $cls = New-Object System.Management.ManagementClass("Win32_Process")
+        $in = $cls.GetMethodParameters("Create")
+        $in["CommandLine"] = $CommandLine
+        $out = $cls.InvokeMethod("Create", $in, $null)
+        $rc = [int]$out["ReturnValue"]
+        if ($rc -eq 0) {
+            Write-Log ("wmi process created, pid={0}" -f $out["ProcessId"])
+            return $true
+        }
+        Write-Log ("wmi process create returned {0}" -f $rc)
+    } catch {
+        Write-Log ("wmi process create failed: {0}" -f $_.Exception.Message)
+    }
+    return $false
+}
+
 function Start-Tray {
     if (-not (Test-Path $TrayScript)) {
         Write-Log "ERROR: tray script missing: $TrayScript"
@@ -163,25 +201,56 @@ function Start-Tray {
     # 不会被父进程所在 Job Object 连带终止，且天然获得最高权限。
     # ⚠ 任务被「设置窗口 → 开机自动启动」停用后 Start-ScheduledTask 会直接抛
     #   「任务被禁用。」——那是用户的选择，不要偷偷把它启用回来，走直启兜底即可。
-    try {
-        $t = Get-ScheduledTask -TaskName $TaskTray -ErrorAction SilentlyContinue
-        if ($t -and (-not $t.Settings.Enabled)) {
-            Write-Log "tray task is disabled (autostart turned off in settings), using direct launch"
-        } else {
+    $t = Get-ScheduledTask -TaskName $TaskTray -ErrorAction SilentlyContinue
+    if ($t -and (-not $t.Settings.Enabled)) {
+        Write-Log "tray task is disabled (autostart turned off in settings), using direct launch"
+    } else {
+        try {
             Start-ScheduledTask -TaskName $TaskTray -ErrorAction Stop
-            Write-Log "tray started via scheduled task"
-            return $true
+            if (Wait-TrayUp -Seconds 8) {
+                Write-Log "tray started via scheduled task"
+                return $true
+            }
+            $code = 0
+            try {
+                $info = Get-ScheduledTaskInfo -TaskName $TaskTray -ErrorAction Stop
+                if ($info) { $code = [int]$info.LastTaskResult }
+            } catch { }
+            Write-Log ("scheduled task returned but tray is not up (LastTaskResult={0} / 0x{1:X8}), falling back to direct launch" -f $code, $code)
+        } catch {
+            Write-Log ("scheduled task start failed, falling back to direct launch: {0}" -f $_.Exception.Message)
         }
-    } catch {
-        Write-Log ("scheduled task start failed, falling back to direct launch: {0}" -f $_.Exception.Message)
     }
 
+    # 直启兜底：计划任务被禁用、或被系统拒绝执行（如交互式令牌拿不到）时走这条路。
     $psExe = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
     if (-not (Test-Path $psExe)) { $psExe = "powershell.exe" }
     $argLine = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{0}"' -f $TrayScript
-    Start-Process -FilePath $psExe -ArgumentList $argLine -WindowStyle Hidden | Out-Null
-    Write-Log "tray launched (direct)"
-    return $true
+
+    # 先用 WMI 拉起（脱离进程树，启动器退出不会连带杀死托盘），失败再退回 Start-Process
+    $cmdLine = '"{0}" {1}' -f $psExe, $argLine
+    if (Start-TrayDetached -CommandLine $cmdLine) {
+        if (Wait-TrayUp -Seconds 10) {
+            Write-Log "tray launched (wmi detached)"
+            return $true
+        }
+        Write-Log "ERROR: wmi launch returned but tray is not up"
+    }
+
+    try {
+        Start-Process -FilePath $psExe -ArgumentList $argLine -WindowStyle Hidden | Out-Null
+        if (Wait-TrayUp -Seconds 10) {
+            Write-Log "tray launched (direct)"
+            return $true
+        }
+        Write-Log "ERROR: direct launch returned but tray is not up"
+    } catch {
+        Write-Log ("ERROR: direct launch failed: {0}" -f $_.Exception.Message)
+    }
+
+    # 两条路都失败时必须让用户看得见，而不是静默退出
+    Show-Info "托盘启动失败。`n`n计划任务和直接启动都没能拉起托盘进程。`n请查看日志：`n$LogFile" "启动失败" "Error"
+    return $false
 }
 
 function Stop-Tray {

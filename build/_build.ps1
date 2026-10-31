@@ -2,21 +2,25 @@
 # 构建根目录 = 本脚本所在目录（build\），不再依赖绝对路径
 $B = $PSScriptRoot
 $rep = Join-Path $B "_build_result.txt"
+
+# 源码目录：兼容两种布局——src 与 build 同级（本仓库结构），或 src 位于 build 内
+$Src = Join-Path $B "src"
+if (-not (Test-Path $Src)) { $Src = Join-Path (Split-Path $B -Parent) "src" }
 $o = New-Object System.Collections.ArrayList
 
 Import-Module ps2exe -Force
 
 $embed = @{
-    '%ProgramData%\PowerSwitch\SmartPowerSwitch.ps1'      = "$B\src\SmartPowerSwitch.ps1"
-    '%ProgramData%\PowerSwitch\PowerSwitchSettings.ps1'   = "$B\src\PowerSwitchSettings.ps1"
-    '%ProgramData%\PowerSwitch\PowerSwitchTray.ps1'       = "$B\src\PowerSwitchTray.ps1"
-    '%ProgramData%\PowerSwitch\使用说明.html'             = "$B\src\help.html"
-    '%ProgramData%\PowerSwitch\power_config.default.json' = "$B\src\power_config.default.json"
-    '%ProgramData%\PowerSwitch\icons\icon-saver.ico'      = "$B\src\icon-saver.ico"
-    '%ProgramData%\PowerSwitch\icons\icon-balanced.ico'   = "$B\src\icon-balanced.ico"
-    '%ProgramData%\PowerSwitch\icons\icon-high.ico'       = "$B\src\icon-high.ico"
-    '%ProgramData%\PowerSwitch\icons\icon-paused.ico'     = "$B\src\icon-paused.ico"
-    '%ProgramData%\PowerSwitch\icons\icon-unknown.ico'    = "$B\src\icon-unknown.ico"
+    '%ProgramData%\PowerSwitch\SmartPowerSwitch.ps1'      = "$Src\SmartPowerSwitch.ps1"
+    '%ProgramData%\PowerSwitch\PowerSwitchSettings.ps1'   = "$Src\PowerSwitchSettings.ps1"
+    '%ProgramData%\PowerSwitch\PowerSwitchTray.ps1'       = "$Src\PowerSwitchTray.ps1"
+    '%ProgramData%\PowerSwitch\使用说明.html'             = "$Src\help.html"
+    '%ProgramData%\PowerSwitch\power_config.default.json' = "$Src\power_config.default.json"
+    '%ProgramData%\PowerSwitch\icons\icon-saver.ico'      = "$Src\icons\icon-saver.ico"
+    '%ProgramData%\PowerSwitch\icons\icon-balanced.ico'   = "$Src\icons\icon-balanced.ico"
+    '%ProgramData%\PowerSwitch\icons\icon-high.ico'       = "$Src\icons\icon-high.ico"
+    '%ProgramData%\PowerSwitch\icons\icon-paused.ico'     = "$Src\icons\icon-paused.ico"
+    '%ProgramData%\PowerSwitch\icons\icon-unknown.ico'    = "$Src\icons\icon-unknown.ico"
 }
 
 [void]$o.Add("embed entries: " + $embed.Count)
@@ -41,7 +45,7 @@ try {
         -description "Automated Windows power plan switching with tray control" `
         -company "PowerSwitch" `
         -copyright "" `
-        -version "1.0.2.0" `
+        -version "1.0.3.0" `
         -embedFiles $embed 2>&1 | ForEach-Object { [void]$o.Add("ps2exe> " + $_) }
     [void]$o.Add("compile finished in " + [int]$sw.Elapsed.TotalSeconds + "s")
 } catch {
