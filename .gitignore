@@ -1,0 +1,27 @@
+# ---- 运行时产物（部署在 C:\ProgramData\PowerSwitch\，不应入库）----
+power_config.json
+power_switch.log
+power_switch.log.1
+power_switch_state.json
+tray.log
+tray.log.1
+launcher.log
+installed.version
+tray.pid
+automation.paused
+
+# ---- 构建产物 ----
+build/PowerSwitch.exe
+build/_build_result.txt
+build/_scratch/
+
+# ---- 备份文件 ----
+*.bak
+*.bak-*
+*~
+
+# ---- 系统与编辑器 ----
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

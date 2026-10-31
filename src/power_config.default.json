@@ -1,0 +1,15 @@
+{
+    "NightStartHour":  23,
+    "NightEndHour":  7,
+    "AllDayMonitor":  true,
+    "CpuThreshold":  20,
+    "LowLoadDuration":  5,
+    "HighLoadDuration":  1,
+    "SampleCount":  2,
+    "SampleIntervalSec":  5,
+    "MaxLogSizeMB":  5,
+    "TrayRefreshSec":  15,
+    "DayMode":  "Balanced",
+    "NightLowLoadMode":  "PowerSaver",
+    "NightHighLoadMode":  "Balanced"
+}
